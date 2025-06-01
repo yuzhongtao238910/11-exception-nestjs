@@ -1,5 +1,5 @@
 
-export interface ArgumentHost {
+export interface ArgumentsHost {
     switchToHttp(): {
         getRequest<T>(): T 
         getResponse<T>(): T 

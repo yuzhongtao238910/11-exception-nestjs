@@ -1,6 +1,7 @@
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module"
+import { CustomExceptionFilter } from "./exception/self-custom-exception.filter"
 // import { loggerFunction } from "./middleware/logger.function.middleware"
 
 // function getMiddleware(val) {
@@ -9,6 +10,15 @@ import { AppModule } from "./app.module"
 //         next()
 //     }
 // }
+
+class Apple {}
+
+const apple = new Apple()
+
+// console.log(apple instanceof Function) // false
+// console.log(Apple instanceof Function) // true
+
+
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule)
@@ -22,6 +32,13 @@ async function bootstrap() {
     // })
 
     // app.use(getMiddleware("123"))
-    await app.listen(8989)
+
+
+    // 这个是全局异常过滤器哈
+    // 异常过滤器是可以设置为全局的哈，这块无法进行依赖注入哈
+    // app.useGlobalFilters(new CustomExceptionFilter());
+
+    await app.listen(8080)
 }
 bootstrap()
+

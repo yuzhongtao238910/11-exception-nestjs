@@ -1,10 +1,12 @@
 import express, { Express, Request as ExpressRequest, Response as ExpressResponse, 
     NextFunction  } from "express"
 import path from "path"
-import { NestMiddleware, RequestMethod, ArgumentHost, GlobalHttpExceptionFilter } from "@nestjs/common"
+import { NestMiddleware, RequestMethod, ArgumentsHost, ExceptionFilter } from "@nestjs/common"
 
 import { INJECTED_TOKENS, DESGIN_PARAMTYPES } from "../common/constant"
 import { defineModule } from "../common/module.decorator"
+import { APP_FILTER} from "./constants"
+import { GlobalHttpExceptionFilter } from "../common/http-exception.filter"
 export class NestApplication {
 
 
@@ -28,15 +30,20 @@ export class NestApplication {
 
     // 记录所有得中间件
     // 可能是类，可以能是实例，还可能是函数中间件
-    private readonly middlewares = []
+    private middlewares = []
 
 
     // 记录需要排除的路径
     private readonly excludeRoutes = []
 
 
+    // 这个是nestjs给的默认的全局异常过滤器
     // 添加一个全局的异常过滤器，就是一个处理异常的程序哈
     private readonly defaultGlobalHttpExceptionFilter = new GlobalHttpExceptionFilter()
+
+
+    // 自定义的全局的异常过滤器
+    private readonly globalHttpExceptionFilter = []
     
 
 
@@ -47,10 +54,21 @@ export class NestApplication {
         
     }
 
+
+    useGlobalFilters(...filters: ExceptionFilter[]) {
+
+
+        defineModule(this.module, filters)
+
+        this.globalHttpExceptionFilter.push(...filters)
+    }
+
     private initMiddlewares() {
         // MiddlewareConsumer就是当前得NestApplication的实例
         this.module.prototype.configure?.(this)
     }
+
+    
 
     use(middleware) {
         this.app.use(middleware)
@@ -59,7 +77,10 @@ export class NestApplication {
 
     apply(...middleware: NestMiddleware[]) {
         // console.log(middleware, "middleware")
-        defineModule(this.module, middleware)
+
+
+        // 实际上是类才需要进行加这个
+        defineModule(this.module, middleware.filter(fil => fil instanceof Function))
         // 把接收到得中间件放到中间件得数组之中，并且返回当前得实例哈
         this.middlewares.push(...middleware)
         return this
@@ -140,13 +161,30 @@ export class NestApplication {
                 })
             }
         }
+
+
+        /*
+        consumer
+            // 这块一定要先apply，然后再forRoutes
+            .apply(logger1)
+            .forRoutes(AppController)
+            .apply(logger2)
+            .forRoutes(App2Controller)
+
+            然后apply+forRoutes是一对一对的，这能是先apply，然后再forRoutes
+
+            // 如果不加下面这一行的话，访问App2Controller这个的时候，logger1+logger2都会执行，这样是不对的哈
+        */
+
+        this.middlewares = []
+
         return this
     }
     private getMiddlewareInstance(middleware) {
         if ( middleware instanceof Function) {
             // console.log(middleware, "middleware")
             // 这块是需要传参数的哈
-            const dependencies = this.resolveDependencies(middleware, this.module)
+            const dependencies = this.resolveDependencies(middleware)
             // console.log(dependencies, "dependencies")
             return new middleware(...dependencies)
         } 
@@ -361,10 +399,22 @@ export class NestApplication {
          */
         // 获取当前模块的providers
         // 此providers代表module这个模块的providers得token
+
+        // 这个providers再global为true的时候，就是this.globalProviders
+        // 如果global是false的话，就是module对应的providers set
         const providers = global ? this.globalProviders : (this.modulesProviders.get(module) ?? new Set())
 
         if (!this.modulesProviders.has(module)) {
-            this.modulesProviders.set(module, providers)
+            // 因为set本身就可以去重的，里面只会有不一样的值，其实这个判断没什么用的，
+            // !this.modulesProviders.has(module)这个判断其实是没有用的，我先不删除了哈
+
+            if (!global) {
+                // 如果当前不是全局的，才需要这样的
+                // 全局的就放在 this.globalProviders 
+                this.modulesProviders.set(module, providers)
+            }
+
+            
         }
 
         // 如果token对应的实例已经有了，就不再需要实例化了
@@ -397,7 +447,7 @@ export class NestApplication {
             // 1- 获取类的定义 
             const Clazz = provider.useClass
             // 2- 获取此类的参数
-            const dependencies = this.resolveDependencies(Clazz, module)
+            const dependencies = this.resolveDependencies(Clazz)
             // 创建提供者类的实例
             const value = new Clazz(...dependencies)
             // 最后注册provider
@@ -424,7 +474,7 @@ export class NestApplication {
             this.providerInstances.set(provider.provide, value)
             providers.add(provider.provide)
         } else {
-            const dependencies = this.resolveDependencies(provider, module) ?? []
+            const dependencies = this.resolveDependencies(provider) ?? []
             const value = new provider(...dependencies)
             // this.providers.set(provider, value)
             this.providerInstances.set(provider, value)
@@ -435,7 +485,7 @@ export class NestApplication {
     }
 
 
-    private resolveDependencies(Class, module1) {
+    private resolveDependencies(Class) {
         
         // 取得注入的token
         const injectedTokens = Reflect.getMetadata(INJECTED_TOKENS, Class) ?? []
@@ -481,7 +531,7 @@ export class NestApplication {
 
         for (const Controller of controllers) {
 
-            const dependencies = this.resolveDependencies(Controller, this.module)
+            const dependencies = this.resolveDependencies(Controller)
 
             const controller = new Controller(...dependencies)
             // 获取控制器类的路径前缀
@@ -489,6 +539,11 @@ export class NestApplication {
 
 
             const controllerPrototype = Reflect.getPrototypeOf(controller)
+
+            // 获取控制器上的绑定的异常过滤器的数组哈
+            const controllerFilters = Reflect.getOwnMetadata("filters", Controller) ?? []
+
+            defineModule(this.module, controllerFilters.filter(fil =>fil instanceof Function))
 
 
             for (const methodName of Object.getOwnPropertyNames(controllerPrototype)) {
@@ -509,14 +564,25 @@ export class NestApplication {
                 // 获取响应头
                 const headers = Reflect.getMetadata("headers", method) ?? []
 
+
+                // 获取方法上绑定的异常过滤器的数组
+                const methodFilters = Reflect.getMetadata("filters", method) ?? []
+
+                
+
                 // 如果方法名字不存在，那么就不处理了
                 if (!httpMethod) {
                     continue
                 }
+
+                defineModule(this.module, methodFilters.filter(fil =>fil instanceof Function))
+                // 合并方法和控制器上的过滤器哈
+                const filters = [...controllerFilters, ...methodFilters]
+
                 const routePath = path.posix.join("/", prefix, pathMetaData)
                 this.app[httpMethod.toLowerCase()](routePath, async (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
                     
-                    const host: ArgumentHost = { // 因为nestjs不但支持http，还支持graphql，rpc等等其他的方式哈
+                    const host = { // 因为nestjs不但支持http，还支持graphql，rpc等等其他的方式哈
                         // 这块是为了兼容处理哈
                         switchToHttp: () => {
                             return {
@@ -529,6 +595,11 @@ export class NestApplication {
 
                     // 这块执行的时候可能会发生错误
                     try {
+
+
+                        // let a;
+                        // console.log(a.toString())
+
                         const args = this.resolveParams(controller, method, methodName, req, res, next, host)
 
                         const result = method.call(controller, ...args)
@@ -576,7 +647,7 @@ export class NestApplication {
                         // console.log(error)
 
                         //
-                        await this.callExceptionFilters(error, host)
+                        await this.callExceptionFilters(error, host, methodFilters, controllerFilters)
                     }
                     
                 })
@@ -586,13 +657,55 @@ export class NestApplication {
         }
     }
 
-    private callExceptionFilters(error: Error, host: any) {
+    getFilterInstance(filter) {
+        if (filter instanceof Function) {
+            // 这是一个类
+
+            const dependencies = this.resolveDependencies(filter)
+
+            console.log(dependencies, 621)
+
+            return new filter(...dependencies)
+
+        }
+
+        // 这块是实例哈
+        return filter
+    }
+
+    private callExceptionFilters(error: Error, host: any, methodFilters, controllerFilters) {
         const allFilters = [
+            ...methodFilters, // 先找方法上的
+            ...controllerFilters, // 再找控制器上的
+            ...this.globalHttpExceptionFilter, // 再找全局的
             this.defaultGlobalHttpExceptionFilter
         ]
-        
+
+        // 按照先方法过滤器，控制器过滤器，用户配置的全局的过滤器，默认全局过滤器的顺序来遍历
+        // 找到第一个可以处理的过滤器就可以了
+
+        // 每个过滤器只会处理自己关心的异常哈
+
+        // 过滤器有catch装饰器哈
+        // filter还可能是一个类或者是实例哈
         for (const filter of allFilters) {
-            filter.catch(error, host)
+
+            let filterInstance = this.getFilterInstance(filter)
+
+            // 取出此异常过滤器关心的异常或者说要处理的异常
+            const exceptions = Reflect.getMetadata("catch", filterInstance.constructor) ?? []
+
+            // console.log(exceptions, 635, filter)
+
+            // 如果没有配置catch或者说是
+            // 当前的错误刚好就是配置的catch的exception的类型或者是子类哈
+            if (exceptions.length == 0 || exceptions.some(exception => error instanceof exception)) {
+                // 说明是全局的，或者是catch里面没有传递参数
+                filterInstance.catch(error, host)
+                break;
+            }
+
+            
         }
     }
 
@@ -602,7 +715,7 @@ export class NestApplication {
         return metaData.filter(Boolean).find(item => item.key === 'Res' || item.key === 'Response' || item.key === "Next")
     }
 
-    resolveParams(target: any, method: any, methodName: any, req: ExpressRequest, res: ExpressResponse, next: NextFunction, host: ArgumentHost) {
+    resolveParams(target: any, method: any, methodName: any, req: ExpressRequest, res: ExpressResponse, next: NextFunction, host: ArgumentsHost) {
 
         // const existingParameters = Reflect.getMetadata("params", Reflect.getPrototypeOf(target), methodName) || []
 
@@ -649,11 +762,25 @@ export class NestApplication {
         // .filter(item => item)
     }
 
+    async initGlobalFilters() {
+        // 获取当前模块的所有的providers
+        const providers = Reflect.getMetadata("providers", this.module) ?? []
+    
+        for (const provider of providers) {
+            if (provider.provide && provider.provide === APP_FILTER) {
+                const providerInstance = this.getProviderByToken(APP_FILTER, this.module)
+
+                this.useGlobalFilters(providerInstance)
+            }
+        }
+    }
+
 
     async listen(port: number) {
         // 在这块支持异步
         await this.initProviders()
         await this.initMiddlewares()
+        await this.initGlobalFilters(); // 初始化全局的过滤器，为了可以使全局的过滤器具有依赖注入的功能哈
         await this.init()
         // 调用express实例的listen方法启动一个express的app服务器，监听port端口
         this.app.listen(port, () => {

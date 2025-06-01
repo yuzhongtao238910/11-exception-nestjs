@@ -1,6 +1,6 @@
 // http 异常过滤器
 
-import { ArgumentHost, ExceptionFilter, HttpException } from "@nestjs/common";
+import { ArgumentsHost, ExceptionFilter, HttpException } from "@nestjs/common";
 import { Response } from "express"
 
 /**
@@ -14,7 +14,7 @@ import { Response } from "express"
  */
 
 export class GlobalHttpExceptionFilter implements ExceptionFilter {
-    catch(exception: any, host: ArgumentHost) {
+    catch(exception: any, host: ArgumentsHost) {
 
         const ctx = host.switchToHttp()
 
@@ -52,7 +52,8 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
 
             return response.status(500).json({
                 statusCode: 500,
-                message: "Internal server error"
+                message: "Internal server error",
+                error: exception.message
             })
         }
     }

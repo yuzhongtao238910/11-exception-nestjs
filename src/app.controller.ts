@@ -1,8 +1,26 @@
-import { Controller, Get, HttpException, HttpStatus, BadRequestException } from "@nestjs/common"
+import { Controller, Get, HttpException, HttpStatus, BadRequestException, RequestTimeoutException, UseFilters } from "@nestjs/common"
 
 import { ForbiddenException } from "./forbidden.exception"
-@Controller()
+import { CustomExceptionFilter } from "./exception/self-custom-exception.filter"
+import { AppService } from "./app.service"
+@Controller('app1')
+// 可以设置控制器级别的，只针对控制器级别的方法生效
+// @UseFilters( new CustomExceptionFilter() ) // 这个是控制器级别的，针对所有的生效
+// 如果有参数，就只能使用类了，或者是说需要依赖注入
+// @UseFilters( CustomExceptionFilter ) // 这个是控制器级别的，针对所有的生效
 export class AppController {
+
+    constructor(
+        private readonly appService: AppService
+    ) {
+        
+    }
+
+
+    @Get("get") 
+    get() {
+        return this.appService.getMessage()
+    }
 
     @Get("exception")
     exception() {
@@ -43,7 +61,20 @@ export class AppController {
 
 
     @Get("bad-request")
+    // 这块用实例
+    // @UseFilters( ) // 只针对这个方法生效哈
     badRequest() {
         throw new BadRequestException("error-message", "hello")
     }
+
+    @Get("timeout-request")
+    // 这块用类哈
+    // @UseFilters( new CustomExceptionFilter() ) // 只针对这个方法生效哈/
+    // @UseFilters( CustomExceptionFilter ) // 只针对这个方法生效哈
+    timeoutRequest() {
+        throw new RequestTimeoutException("error-timeout", "timeout")
+    }
+
+    // 如果想改变默认的异常过滤器的行为
+
 }

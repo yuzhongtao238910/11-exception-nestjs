@@ -51,7 +51,35 @@ export function Module(metadata: ModuleMetadata): ClassDecorator {
 
         // defineModule(target, providers)
 
-        defineModule(target, metadata.providers)
+
+        
+        /*
+
+        providers:[
+            AppService,
+            {
+                provide: "PREFIX",
+                useValue: "prefix"
+            },
+            // 这样在全局过滤器的时候是可以依赖注入的
+            {
+                provide: APP_FILTER,
+                useClass: CustomExceptionFilter,
+            }
+        ],
+        
+        */
+
+        
+        // 只有类才需要，依赖注入哈
+        // 但是这样写的话有点问题，这个provider可能是一个类
+        // defineModule(target, (metadata.providers ?? []).map((provider: any) => provider.useClass).filter(Boolean))
+
+        defineModule(target, (metadata.providers ?? [])
+            .map((provider: any) => provider instanceof Function ? provider : provider.useClass)
+            .filter(Boolean))
+        // 其实这行代码我们到现在还没有使用到哈
+        // defineModule(target, metadata.providers ?? [])
 
     }
 }
@@ -61,6 +89,7 @@ export function defineModule( nestModule, targets = []) {
     // key：nestModule
     // value：nestModule是对应得模块
     targets.forEach(target => {
+        console.log(target, 89999)
         // console.log(target instanceof Function, "target")
         Reflect.defineMetadata("nestModule", nestModule, target)
     })

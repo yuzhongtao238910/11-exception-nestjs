@@ -1,11 +1,37 @@
 import { Module, NestModule, MiddlewareConsumer, RequestMethod } from "@nestjs/common"
 import { AppController } from "./app.controller"
 import { AppService } from "./app.service"
+import { APP_FILTER } from "@nestjs/core"
+import { CustomExceptionFilter } from "./exception/self-custom-exception.filter"
+import { App2Controller } from "./app2.controller"
+
+
+function logger1(req, res, next) {
+    console.log(`logger1`)
+    next()
+}
+
+
+function logger2(req, res, next) {
+    console.log(`logger2`)
+    next()
+}
+
 
 @Module({
-    controllers: [AppController],
+    controllers: [AppController, App2Controller],
     providers:[
+        {
+            provide: "PREFIX",
+            useValue: "prefix"
+        },
         AppService,
+        
+        // 这样在全局过滤器的时候是可以依赖注入的
+        {
+            provide: APP_FILTER,
+            useClass: CustomExceptionFilter,
+        }
     ],
 
     imports: [
@@ -15,7 +41,20 @@ import { AppService } from "./app.service"
         // AppService
     ]
 })
-export class AppModule {}
+// export class AppModule {}
+export class AppModule implements NestModule {
+    configure(consumer: MiddlewareConsumer) {
+        consumer
+            // 如果一次需要多个中间件，就只能是apply(middleware1, middleware2, .......) 
+            // 这块一定要先apply，然后再forRoutes
+            .apply(logger1)
+            .forRoutes(AppController)
+            .apply(logger2)
+            .forRoutes(App2Controller)
+    }
+    
+}
+
 // export class AppModule implements NestModule {
 
 
