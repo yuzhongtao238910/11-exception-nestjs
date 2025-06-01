@@ -1,47 +1,28 @@
-- 中间件
-- 在路由处理器之前来调用函数
-- 中间件函数
-- 默认情况下：express中间件等同于nestjs中间件
-    - 执行任何代码
-    - 对请求和相应修改
-    - 结束请求-相应周期
-    - 调用堆栈之中的下一个中间件函数
-    - 如果当前中间件函数未结束相应周期-则必须调用next将控制权传递给下一个中间件函数
+- 异常过滤器，
+    - nestjs内置了一个异常层，负责处理应用程序，当应用程序代码没有处理异常的时候，此层就会捕获该异常，
+    - 然后自动发送适当的用户友好响应
 
-- 通过函数
-- 带有 @Injectable() 装饰器的类来实现自定义 Nest 中间件。类应该实现 NestMiddleware 接口，而函数没有任何特殊要求
-- 添加 @Injectable() 就是能够依赖注入的
-- 依赖注入就需要加入 @Injectable()，否则其实不加也是也可以的
-- middleware之中使用的全局的依赖项是全局的providers嘛？
-    - 先找模块内&再找全局的哈
-
-- 路由通配符
-    - forRoutes({ Spath: "ab*cd", method: RequestMethod.ALL })
-
-- 排除路由
-    - 有时候我们想要排除某些路由不应用中间件，我们可以使用exclude方法清空排除某些路由，此方法可以接受
-    - 单个字符串，多个字符串，或者是标识要排除路由的RouteInfo对象
+- 默认情况下，这个操作是由一个内置的全局异常过滤器来执行的，该过滤器的处理类型为HttpException(及其子类)的异常，当异常是
+- 未识别的（既不是HttpException也不是继承自HttpException的类），内置的异常过滤器会生成以下默认的JSON响应
 ```javascript
-consumer
-    .apply(LoggerMiddleware)
-    .exclude(
-        {path: 'cats', method: RequestMethod.GET},
-        {path: "cats", method: RequestMethod.POST},
-        'cats/(.*)'
-    )
-    .forRoutes(CatsController)
-
-
+{
+    "statusCode": 500,
+    "message": "Internal server error"
+}
 ```
 
-- forRoutes和exclude的调用顺序是没有影响的
-    - 请求肯定是异步的，请求的时候肯定都是配置好了
 
-- 函数式中间件
-    - 一个中间件，没有成员，没有附加方法，没有依赖项，我们就可以使用一个简单的函数中间件
+- @Catch
+    - @Catch(HttpException) 装饰器将所需的元数据绑定到异常过滤器，告诉 Nest 此特定过滤器正在查找 HttpException 类型的异常，而不是其他类型。
+    - @Catch() 装饰器可以接受单个参数或逗号分隔的列表。这使您可以一次为多种类型的异常设置过滤器。
 
+- 内置HTTP异常
+    - BadRequestException 标识请求无效的异常，通常用于处理客户端发送的无效或者是错误的请求
+    - UnauthorizedException 表示未经授权的异常，用于处理需要身份验证的请求，但客户端未提供有效的身份验证的凭证哈
+    - NotAcceptableException
+    - GoneException
+    - BadGatewayException
+    - ......
 
-- 全局中间件
-    - 如果我们想一次性的将中间件绑定到每个注册的路由，我们可以使用NestApplication实例提供的use()方法
-    - app.use(middleware)
-    - 全局中间件是无法注入依赖的
+- 异常过滤器
+    - 

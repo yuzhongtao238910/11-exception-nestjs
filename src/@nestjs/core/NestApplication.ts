@@ -1,7 +1,7 @@
 import express, { Express, Request as ExpressRequest, Response as ExpressResponse, 
     NextFunction  } from "express"
 import path from "path"
-import { NestMiddleware, RequestMethod } from "@nestjs/common"
+import { NestMiddleware, RequestMethod, ArgumentHost, GlobalHttpExceptionFilter } from "@nestjs/common"
 
 import { INJECTED_TOKENS, DESGIN_PARAMTYPES } from "../common/constant"
 import { defineModule } from "../common/module.decorator"
@@ -33,6 +33,12 @@ export class NestApplication {
 
     // 记录需要排除的路径
     private readonly excludeRoutes = []
+
+
+    // 添加一个全局的异常过滤器，就是一个处理异常的程序哈
+    private readonly defaultGlobalHttpExceptionFilter = new GlobalHttpExceptionFilter()
+    
+
 
     constructor(private readonly module: any) {
         this.app.use(express.json())
@@ -508,53 +514,85 @@ export class NestApplication {
                     continue
                 }
                 const routePath = path.posix.join("/", prefix, pathMetaData)
-                this.app[httpMethod.toLowerCase()](routePath, (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
-                    const args = this.resolveParams(controller, method, methodName, req, res, next)
-
-                    const result = method.call(controller, ...args)
-
-
-                    if (result?.url) {
-                        return res.redirect(res?.statusCode || 302, result?.url)
+                this.app[httpMethod.toLowerCase()](routePath, async (req: ExpressRequest, res: ExpressResponse, next: NextFunction) => {
+                    
+                    const host: ArgumentHost = { // 因为nestjs不但支持http，还支持graphql，rpc等等其他的方式哈
+                        // 这块是为了兼容处理哈
+                        switchToHttp: () => {
+                            return {
+                                getRequest: ()=> req,
+                                getResponse: ()=> res,
+                                getNext: ()=> next
+                            }
+                        }
                     }
 
-                    // 判断如果需要重定向，就直接重定向到指定的redirectUrl里面去
-                    if (redirectUrl) {
-                        return res.redirect(redirectStatusCode || 302, redirectUrl)
-                    }
+                    // 这块执行的时候可能会发生错误
+                    try {
+                        const args = this.resolveParams(controller, method, methodName, req, res, next, host)
+
+                        const result = method.call(controller, ...args)
+
+
+                        if (result?.url) {
+                            return res.redirect(res?.statusCode || 302, result?.url)
+                        }
+
+                        // 判断如果需要重定向，就直接重定向到指定的redirectUrl里面去
+                        if (redirectUrl) {
+                            return res.redirect(redirectStatusCode || 302, redirectUrl)
+                        }
 
 
 
-                    // 状态码，在nestjs之中，响应的状态码默认是200，但是post请求的状态码是201，我们可以使用@HttpCode来修改状态码的
-                    // 201的意思就是实体创建成功哈
-                    if (statusCode) {
-                        res.statusCode = statusCode
-                    } else if (httpMethod === "POST") {
-                        res.statusCode = 201
-                    }
+                        // 状态码，在nestjs之中，响应的状态码默认是200，但是post请求的状态码是201，我们可以使用@HttpCode来修改状态码的
+                        // 201的意思就是实体创建成功哈
+                        if (statusCode) {
+                            res.statusCode = statusCode
+                        } else if (httpMethod === "POST") {
+                            res.statusCode = 201
+                        }
 
                     
 
-                    // 判断controller的methodName方法里面是否有使用Response或者Res参数装饰器，如果用了任何一个，就不在这里发送响应
-                    // 有方法自己处理
+                        // 判断controller的methodName方法里面是否有使用Response或者Res参数装饰器，如果用了任何一个，就不在这里发送响应
+                        // 有方法自己处理
 
-                    const responseMeta = this.getResponseMetadata(controller, methodName)
-                    // 判读是否有注入res或者是response装饰器
-                    // 或者是注入了，但是传递了passthrough参数，都会由nestjs来返回相应
-                    if (!responseMeta || responseMeta?.data?.passthrough) {
+                        const responseMeta = this.getResponseMetadata(controller, methodName)
+                        // 判读是否有注入res或者是response装饰器
+                        // 或者是注入了，但是传递了passthrough参数，都会由nestjs来返回相应
+                        if (!responseMeta || responseMeta?.data?.passthrough) {
 
-                        // 设置响应头
-                        headers?.forEach(header => {
-                            res.setHeader(header.name, header.value)
-                        })
+                            // 设置响应头
+                            headers?.forEach(header => {
+                                res.setHeader(header.name, header.value)
+                            })
 
-                        // 把返回值序列化发回给客户端
-                        res.send(result)
+                            // 把返回值序列化发回给客户端
+                            res.send(result)
+                        }
+
+                    } catch(error) {
+                        // console.log(error)
+
+                        //
+                        await this.callExceptionFilters(error, host)
                     }
+                    
                 })
 
             }
 
+        }
+    }
+
+    private callExceptionFilters(error: Error, host: any) {
+        const allFilters = [
+            this.defaultGlobalHttpExceptionFilter
+        ]
+        
+        for (const filter of allFilters) {
+            filter.catch(error, host)
         }
     }
 
@@ -564,7 +602,7 @@ export class NestApplication {
         return metaData.filter(Boolean).find(item => item.key === 'Res' || item.key === 'Response' || item.key === "Next")
     }
 
-    resolveParams(target: any, method: any, methodName: any, req: ExpressRequest, res: ExpressResponse, next: NextFunction) {
+    resolveParams(target: any, method: any, methodName: any, req: ExpressRequest, res: ExpressResponse, next: NextFunction, host: ArgumentHost) {
 
         // const existingParameters = Reflect.getMetadata("params", Reflect.getPrototypeOf(target), methodName) || []
 
@@ -579,16 +617,7 @@ export class NestApplication {
 
         return temp.map((item, index) => {
             const {key, data, factory} = item
-            const context = { // 因为nestjs不但支持http，还支持graphql，rpc等等其他的方式哈
-                // 这块是为了兼容处理哈
-                switchToHttp: () => {
-                    return {
-                        getRequest: ()=> req,
-                        getReponse: ()=> res,
-                        getNext: ()=> next
-                    }
-                }
-            }
+            
             switch (key) {
                 case "Req":
                 case "Request":
@@ -611,7 +640,7 @@ export class NestApplication {
                 case "Next":
                     return next
                 case "DecoratorFactory":
-                    return factory(data, context)
+                    return factory(data, host)
                     // return req.user
                 default:
                     return null

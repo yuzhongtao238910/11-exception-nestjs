@@ -1,93 +1,49 @@
-import { Controller, Get, Req, Inject, Post } from "@nestjs/common"
-import { CoreService } from "./core.service"
-import { CommonService } from "./common.service"
-import { OtherService } from "./other.service"
-import { AppService } from "./app.service"
-@Controller('app')
+import { Controller, Get, HttpException, HttpStatus, BadRequestException } from "@nestjs/common"
+
+import { ForbiddenException } from "./forbidden.exception"
+@Controller()
 export class AppController {
 
-    constructor(
-        // private readonly logger: LoggerService,
-        // @Inject("StringToken") private readonly stringToken: UseValueService,
-        // @Inject("FactoryToken") private readonly factoryToken: UseFactoryService,
-        // private loggerClassService: LoggerClassService,
-        // @Inject("SUFFIX") private readonly suffix: string
+    @Get("exception")
+    exception() {
+        // 当异常是未识别的（既不是 HttpException 也不是继承自 HttpException 的类），
+        // 内置的异常过滤器会生成以下默认的 JSON 响应：
+        /**
+        {
+            "statusCode": 500,
+            "message": "Internal server error"
+        }
+         */
+        // throw new Error("exception")
 
 
-        // private readonly coreService: CoreService,
-        // private readonly commonService: CommonService
+        // 标准的内置 HttpException
+        // 1) 字符串或者是对象
+        // 2）状态码
+        // 3）
+        // throw new HttpException('Forbidden-apple', HttpStatus.FORBIDDEN)
+        // throw new HttpException({
+        //     // status: HttpStatus.FORBIDDEN,
+        //     code: "10001", // 这还可以自定义code码哈
+        //     error: "这是一个自定义的消息" // 自定义的错误消息
+        // }, HttpStatus.FORBIDDEN, {
+        //     // 第三个构造函数参数（可选）——options——可用于提供错误原因。这个 cause 对象不会被序列化到响应对象中，
+        //     // 但它对于日志记录非常有用，提供了有关导致 HttpException 被抛出的内部错误的宝贵信息。
+        //     cause: "这块是造成的原因"
+        // })
 
 
-        // private readonly otherService: OtherService,
-        private readonly appService: AppService
-        // private readonly commonService: CommonService
-
-    ) {
-
+        throw new ForbiddenException()
     }
 
-    @Get("other")
-    getOther() { 
-        
-        // this.otherService.logger("otherService")
-        // this.commonService.logger("commonService")
-        return "other"
-    }
-
-
-    @Get("apple")
-    getHello(@Req() req): string {
-
-       
-            // this.logger.logger()
-            // this.stringToken.logger()
-            // this.factoryToken.logger()
-            // this.loggerClassService.logger()
-            // console.log(this.suffix, "suffix")
-        return "Hello World"
+    @Get("custom")
+    custom() {
+        throw new ForbiddenException()
     }
 
 
-    @Get("module")
-    getModule() {
-
-
-        // console.log(this.coreService)
-        // console.log(this.commonService)
-        // console.log(this.coreService, "coreService")
-
-        // this.coreService.demo1()
-        // this.commonService.logger("commonService")
-
-        return "module"
-    }
-
-
-    @Get("config")
-    getConfig() {
-        // return this.appService.getConfig()
-        return "config"
-    }
-
-    @Get("config/a")
-    getConfigA() {
-        // return this.appService.getConfig()
-        return "configA"
-    }
-
-    @Post("config")
-    postConfig() {
-        return "config"
-    }
-
-
-    @Get("abccccde")
-    getAbcde() {
-        return "abcde"
-    }
-
-    @Get("abde")
-    getAbd() {
-        return "abd"
+    @Get("bad-request")
+    badRequest() {
+        throw new BadRequestException("error-message", "hello")
     }
 }
