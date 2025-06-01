@@ -366,6 +366,12 @@ export class NestApplication {
 
             
         }
+
+
+
+        // 这种是为了处理导入的模块之中包含controller
+        // 再处理完这个
+        this.initController(module)
     
 
 
@@ -525,8 +531,8 @@ export class NestApplication {
             return null
         }
     }
-    async init() {
-        const controllers = Reflect.getOwnMetadata("controllers", this.module) || []
+    async initController(module) {
+        const controllers = Reflect.getOwnMetadata("controllers", module) || []
 
 
         for (const Controller of controllers) {
@@ -642,6 +648,11 @@ export class NestApplication {
                             // 把返回值序列化发回给客户端
                             res.send(result)
                         }
+
+
+                        let a;
+                        console.log(a.toString())
+
 
                     } catch(error) {
                         // console.log(error)
@@ -781,7 +792,7 @@ export class NestApplication {
         await this.initProviders()
         await this.initMiddlewares()
         await this.initGlobalFilters(); // 初始化全局的过滤器，为了可以使全局的过滤器具有依赖注入的功能哈
-        await this.init()
+        await this.initController(this.module)
         // 调用express实例的listen方法启动一个express的app服务器，监听port端口
         this.app.listen(port, () => {
             // 启动成功后，打印日志

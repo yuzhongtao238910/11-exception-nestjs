@@ -20,6 +20,11 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
 
         const response = ctx.getResponse<Response>()
 
+        if (response.headersSent) {
+            // 就是在send后又出现了报错，实际上这个时候我们不需要处理了
+            return; // 如果此相应已经发送给客户端了，那么就不需要处理了哈
+        }
+
         if (exception instanceof HttpException) {
             const responseException = exception.getResponse()
             const status = exception.getStatus()

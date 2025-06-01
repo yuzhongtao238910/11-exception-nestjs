@@ -94,4 +94,8 @@ export class AppModule {}
 
 ```
 
-- 
+- AppModule导入模块之中包含controller
+    - 
+- setTimeout(() => {
+
+}, 2000)

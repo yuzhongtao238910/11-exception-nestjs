@@ -4,6 +4,7 @@ import { AppService } from "./app.service"
 import { APP_FILTER } from "@nestjs/core"
 import { CustomExceptionFilter } from "./exception/self-custom-exception.filter"
 import { App2Controller } from "./app2.controller"
+import { DemoModule } from "./demo.module"
 
 
 function logger1(req, res, next) {
@@ -35,7 +36,7 @@ function logger2(req, res, next) {
     ],
 
     imports: [
-
+        DemoModule
     ],
     exports: [
         // AppService
